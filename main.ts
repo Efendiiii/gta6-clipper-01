@@ -23,8 +23,35 @@ const outputPath = join(OUTPUT_DIR, 'VIDEO.json');
 const raw = readFileSync(inputPath, 'utf8');
 const video = JSON.parse(raw) as { url?: unknown };
 
-if (typeof video.url !== 'string' || !video.url.startsWith('https://')) {
+if (typeof video.url !== 'string') {
   console.error(`VIDEO.json does not name a video URL: ${raw.trim()}`);
+  process.exit(1);
+}
+
+// The entry is a published YouTube Short: accept only a real YouTube
+// address, and refuse the placeholder id, so a video that has not been
+// uploaded yet fails loudly here instead of passing a bogus URL to the
+// views gate.
+let videoId: string | null = null;
+try {
+  const parsed = new URL(video.url);
+  const host = parsed.hostname.replace(/^www\./, '');
+  if (host === 'youtube.com' || host === 'youtu.be' || host === 'm.youtube.com') {
+    if (parsed.pathname.startsWith('/shorts/')) {
+      // NB: URL parsing percent-encodes '<id>' to '%3Cid%3E', so decode
+      // the id before comparing it with the placeholder below.
+      videoId = decodeURIComponent(parsed.pathname.slice('/shorts/'.length).split('/')[0] ?? '');
+    } else if (host === 'youtu.be') {
+      videoId = decodeURIComponent(parsed.pathname.slice(1).split('/')[0] ?? '');
+    } else {
+      videoId = parsed.searchParams.get('v') ?? '';
+    }
+  }
+} catch {
+  videoId = null;
+}
+if (!videoId || videoId === '<id>') {
+  console.error(`VIDEO.json does not name a published YouTube video URL: ${raw.trim()}`);
   process.exit(1);
 }
 
